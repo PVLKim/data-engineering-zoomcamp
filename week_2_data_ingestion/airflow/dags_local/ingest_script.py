@@ -3,21 +3,25 @@ import os
 from time import time
 
 import pandas as pd
+from pyarrow.parquet import ParquetFile
+import pyarrow as pa 
 from sqlalchemy import create_engine
 
 
 def ingest_callable(user, password, host, port, db, table_name, csv_file, execution_date):
     print(table_name, csv_file, execution_date)
-
+    print(f'postgresql://{user}:{password}@{host}:{port}/{db}')
     engine = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{db}')
     engine.connect()
 
     print('connection established successfully, inserting data...')
 
     t_start = time()
-    df_iter = pd.read_csv(csv_file, iterator=True, chunksize=100000)
-
-    df = next(df_iter)
+    # df_iter = pd.read_csv(csv_file, iterator=True, chunksize=100000)
+    pf = ParquetFile(csv_file) 
+    pf_iter = pf.iter_batches(batch_size = 100000) 
+    df = pa.Table.from_batches([next(pf_iter)]).to_pandas()
+    # df = next(df_iter)
 
     df.tpep_pickup_datetime = pd.to_datetime(df.tpep_pickup_datetime)
     df.tpep_dropoff_datetime = pd.to_datetime(df.tpep_dropoff_datetime)
@@ -33,7 +37,8 @@ def ingest_callable(user, password, host, port, db, table_name, csv_file, execut
         t_start = time()
 
         try:
-            df = next(df_iter)
+            df = pa.Table.from_batches([next(pf_iter)]).to_pandas()
+            # df = next(df_iter)
         except StopIteration:
             print("completed")
             break
